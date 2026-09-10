@@ -1,118 +1,57 @@
 import logging
-import threading
-from datetime import datetime
-from pyhap.accessory import Accessory, Bridge
-from pyhap.accessory_driver import AccessoryDriver
-from pyhap.const import CATEGORY_PROGRAMMABLE_SWITCH
-
-from homeassistant.core import HomeAssistant, Event
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from pyhap.accessory_driver import AccessoryDriver
 
-from .const import DOMAIN, DEFAULT_PORT, DEFAULT_PIN
+from .const import DOMAIN, DEFAULT_PORT, DEFAULT_PINCODE
 
 _LOGGER = logging.getLogger(__name__)
 
-class StatelessButtonAccessory(Accessory):
-    category = CATEGORY_PROGRAMMABLE_SWITCH
-
-    def __init__(self, driver, name, aid=None):
-        super().__init__(driver, name, aid=aid)
-        serv_switch = self.add_preload_service('StatelessProgrammableSwitch')
-        self.char_event = serv_switch.configure_char('ProgrammableSwitchEvent')
-
-    def trigger_press(self, event_type: str):
-        mapping = {
-            "single_press": 0,
-            "double_press": 1,
-            "long_press": 2,
-        }
-        val = mapping.get(event_type)
-        if val is not None:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            _LOGGER.info("[%s] Sendte '%s' fra %s", timestamp, event_type, self.display_name)
-            self.char_event.value = None
-            self.char_event.set_value(val)
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    dev_reg = dr.async_get(hass)
-    dev_reg.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="HomeKit Stateless Button Hub",
-        manufacturer="ESPHome / HA Custom Bridge",
-        model="Stateless Switch Bridge",
-        sw_version="1.1.0",
-    )
+    hass.data.setdefault(DOMAIN, {})
 
-    storage_file = hass.config.path(".storage", f"{DOMAIN}_{entry.entry_id}.state")
+    port = entry.data.get("port", DEFAULT_PORT)
+    pincode = entry.data.get("pincode", DEFAULT_PINCODE)
+    
+    state_file = hass.config.path(f".storage/{DOMAIN}_{entry.entry_id}.state")
 
-    driver = AccessoryDriver(
-        port=DEFAULT_PORT,
-        pincode=DEFAULT_PIN.encode("utf-8"),
-        persist_file=storage_file
-    )
-    bridge = Bridge(driver, "Trykknap Hub")
+    # Importeres dynamisk eller kaldes via executor for at undgå blocking I/O
+    from .bridge import HomeKitStatelessBridge
 
-    accessories = {}
-    aid_counter = 2
+    bridge = HomeKitStatelessBridge(hass, entry)
 
-    selected_entities = entry.options.get("entities", [])
-    if not selected_entities:
-        selected_entities = hass.states.async_entity_ids("event")
+    def _init_driver():
+        driver = AccessoryDriver(
+            port=port,
+            persist_file=state_file,
+            pincode=pincode.encode("utf-8"),
+        )
+        driver.add_accessory(bridge)
+        return driver
 
-    for entity_id in selected_entities:
-        state = hass.states.get(entity_id)
-        if state:
-            name = state.name if state else entity_id
-            acc = StatelessButtonAccessory(driver, name, aid=aid_counter)
-            bridge.add_accessory(acc)
-            accessories[entity_id] = acc
-            aid_counter += 1
+    # Kør synkron fil-I/O i en separat tråd
+    driver = await hass.async_add_executor_job(_init_driver)
 
-    driver.add_accessory(bridge)
+    async def _async_start_driver(event=None):
+        await hass.async_add_executor_job(driver.start)
 
-    thread = threading.Thread(target=driver.start, daemon=True)
-    thread.start()
+    async def _async_stop_driver(event=None):
+        await hass.async_add_executor_job(driver.stop)
 
-    async def _handle_state_change(event: Event):
-        new_state = event.data.get("new_state")
-        old_state = event.data.get("old_state")
-        if not new_state:
-            return
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_driver)
 
-        if old_state and new_state.last_updated == old_state.last_updated:
-            return
-
-        entity_id = event.data.get("entity_id")
-        if entity_id in accessories:
-            event_type = new_state.attributes.get("event_type")
-            if event_type:
-                accessories[entity_id].trigger_press(event_type)
-
-    unsub = async_track_state_change_event(hass, list(accessories.keys()), _handle_state_change)
-    update_listener = entry.add_update_listener(async_reload_entry)
-
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+    hass.data[DOMAIN][entry.entry_id] = {
         "driver": driver,
-        "thread": thread,
-        "unsub": unsub,
-        "update_listener": update_listener
+        "bridge": bridge,
     }
+
+    hass.async_create_task(_async_start_driver())
 
     return True
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
-
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN].pop(entry.entry_id, None)
-    if data:
-        if "unsub" in data:
-            data["unsub"]()
-        if "update_listener" in data:
-            data["update_listener"]()
-        if "driver" in data:
-            data["driver"].stop()
+    if data and "driver" in data:
+        await hass.async_add_executor_job(data["driver"].stop)
     return True
