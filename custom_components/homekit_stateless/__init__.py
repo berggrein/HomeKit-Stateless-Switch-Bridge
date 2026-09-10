@@ -9,13 +9,13 @@ from homeassistant.core import HomeAssistant, Event
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.components import zeroconf
 
 from .const import DOMAIN, DEFAULT_PORT, DEFAULT_PIN
 
 _LOGGER = logging.getLogger(__name__)
 
 class StatelessButtonAccessory(Accessory):
-    """Enkelt knap tilkoblet HomeKit som StatelessProgrammableSwitch."""
     category = CATEGORY_PROGRAMMABLE_SWITCH
 
     def __init__(self, driver, name, aid=None):
@@ -60,12 +60,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if state:
             entity_info.append((entity_id, state.name or entity_id))
 
-    # Kør synkron pyhap fil-I/O i en executor thread for ikke at blokere event loopet
+    # Hent HA's delte Zeroconf-instans for at undgå 'create another Zeroconf instance' advarsler
+    zc = await zeroconf.async_get_instance(hass)
+
     def _build_and_init_driver():
         driver = AccessoryDriver(
             port=DEFAULT_PORT,
             pincode=DEFAULT_PIN.encode("utf-8"),
-            persist_file=storage_file
+            persist_file=storage_file,
+            zeroconf=zc
         )
         bridge = Bridge(driver, "Trykknap Hub")
 
@@ -126,5 +129,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if "update_listener" in data:
             data["update_listener"]()
         if "driver" in data:
-            await hass.async_add_executor_job(data["driver"].stop)
+            driver = data["driver"]
+            def _safe_stop_driver():
+                try:
+                    driver.stop()
+                except (AttributeError, RuntimeError) as err:
+                    _LOGGER.debug("Oversprang mDNS-afmelding under stop: %s", err)
+
+            await hass.async_add_executor_job(_safe_stop_driver)
     return True
