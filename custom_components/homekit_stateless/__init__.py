@@ -36,6 +36,7 @@ class StatelessButtonAccessory(Accessory):
             self.char_event.value = None
             self.char_event.set_value(val)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
@@ -111,8 +112,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return True
 
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN].pop(entry.entry_id, None)
