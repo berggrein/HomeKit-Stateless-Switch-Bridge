@@ -41,12 +41,12 @@ class HomeKitEventBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._port = user_input[CONF_PORT]
+            self._port = int(user_input[CONF_PORT])
             return await self.async_step_entities()
 
         schema = vol.Schema(
             {vol.Required(CONF_PORT, default=DEFAULT_PORT): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1024, max=65535, mode="box")
+                selector.NumberSelectorConfig(min=1024, max=65535, mode="box", step=1)
             )}
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)

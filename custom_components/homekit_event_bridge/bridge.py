@@ -8,10 +8,9 @@ from pathlib import Path
 from pyhap.accessory import Bridge
 from pyhap.accessory_driver import AccessoryDriver
 
+from homeassistant.components import persistent_notification, zeroconf
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
-
-from homeassistant.components import persistent_notification
 
 from .accessory import EventEntitySwitch
 from .const import ATTR_EVENT_TYPE, BRIDGE_NAME, DOMAIN
@@ -37,17 +36,35 @@ class EventBridge:
 
     async def async_start(self, entity_ids: list[str]) -> None:
         """Create the driver/bridge, add the initial accessories and start."""
-        self._persist_file.parent.mkdir(parents=True, exist_ok=True)
-
-        self.driver = AccessoryDriver(
-            port=self._port,
-            persist_file=str(self._persist_file),
-            loop=self._hass.loop,
+        await self._hass.async_add_executor_job(
+            lambda: self._persist_file.parent.mkdir(parents=True, exist_ok=True)
         )
-        self._bridge = Bridge(self.driver, BRIDGE_NAME)
-        self.driver.add_accessory(self._bridge)
 
-        self._sync_entities(entity_ids)
+        # Share HA's own mDNS/zeroconf instance instead of letting pyhap spin
+        # up a second one — avoids conflicts with other integrations' mDNS.
+        async_zc = await zeroconf.async_get_async_instance(self._hass)
+
+        def _build_driver_and_bridge() -> tuple[AccessoryDriver, Bridge]:
+            # AccessoryDriver's __init__ and add_accessory() both do
+            # synchronous file I/O (loading pyhap's bundled service/char
+            # definitions and reading the persist file), so this whole
+            # step runs off the event loop.
+            driver = AccessoryDriver(
+                port=self._port,
+                persist_file=str(self._persist_file),
+                loop=self._hass.loop,
+                async_zeroconf_instance=async_zc,
+            )
+            bridge = Bridge(driver, BRIDGE_NAME)
+            driver.add_accessory(bridge)
+            return driver, bridge
+
+        self.driver, self._bridge = await self._hass.async_add_executor_job(
+            _build_driver_and_bridge
+        )
+
+        for entity_id in entity_ids:
+            await self._async_add_entity(entity_id)
 
         await self.driver.async_start()
 
@@ -83,29 +100,18 @@ class EventBridge:
             self._hass, f"{DOMAIN}_{self._entry_id}_setup_code"
         )
 
-    def _sync_entities(self, entity_ids: list[str]) -> None:
-        """Add/remove accessories so they match the desired entity list.
-
-        Only used at startup here; entity-list changes made via the Options
-        Flow trigger a full reload of the config entry (see __init__.py) so
-        that pyhap's internal AID/IID bookkeeping is rebuilt cleanly rather
-        than mutated in place.
-        """
-        desired = set(entity_ids)
-        current = set(self._accessories)
-
-        for entity_id in current - desired:
-            self._remove_entity(entity_id)
-        for entity_id in desired - current:
-            self._add_entity(entity_id)
-
-    def _add_entity(self, entity_id: str) -> None:
+    async def _async_add_entity(self, entity_id: str) -> None:
         assert self._bridge is not None and self.driver is not None
 
         state = self._hass.states.get(entity_id)
         display_name = state.name if state else entity_id
 
-        accessory = EventEntitySwitch(self.driver, display_name, entity_id)
+        # Building the accessory touches pyhap's (file-backed, but cached
+        # after first use) service/characteristic loader, so keep it off
+        # the event loop too.
+        accessory = await self._hass.async_add_executor_job(
+            EventEntitySwitch, self.driver, display_name, entity_id
+        )
         self._bridge.add_accessory(accessory)
         self._accessories[entity_id] = accessory
 
