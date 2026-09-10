@@ -1,3 +1,4 @@
+cat << 'EOF' > custom_components/homekit_stateless/__init__.py
 import logging
 import threading
 from datetime import datetime
@@ -9,7 +10,6 @@ from homeassistant.core import HomeAssistant, Event
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.components import zeroconf
 
 from .const import DOMAIN, DEFAULT_PORT, DEFAULT_PIN
 
@@ -36,7 +36,6 @@ class StatelessButtonAccessory(Accessory):
             self.char_event.value = None
             self.char_event.set_value(val)
 
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
@@ -60,15 +59,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if state:
             entity_info.append((entity_id, state.name or entity_id))
 
-    # Hent HA's delte Zeroconf-instans for at undgå 'create another Zeroconf instance' advarsler
-    zc = await zeroconf.async_get_instance(hass)
-
     def _build_and_init_driver():
         driver = AccessoryDriver(
             port=DEFAULT_PORT,
             pincode=DEFAULT_PIN.encode("utf-8"),
-            persist_file=storage_file,
-            zeroconf=zc
+            persist_file=storage_file
         )
         bridge = Bridge(driver, "Trykknap Hub")
 
@@ -116,10 +111,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return True
 
-
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN].pop(entry.entry_id, None)
@@ -138,3 +131,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             await hass.async_add_executor_job(_safe_stop_driver)
     return True
+EOF
+
+zip -r homekit_stateless_bridge.zip hacs.json custom_components/
