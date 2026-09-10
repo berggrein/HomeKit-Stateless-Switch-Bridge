@@ -1,0 +1,10 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HomeKit Stateless Switch Bridge",
+        "description": "Vil du oprette HomeKit Stateless Switch Hubben?"
+      }
+    }
+  }
+}
