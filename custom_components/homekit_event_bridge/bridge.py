@@ -11,8 +11,10 @@ from pyhap.accessory_driver import AccessoryDriver
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
+from homeassistant.components import persistent_notification
+
 from .accessory import EventEntitySwitch
-from .const import ATTR_EVENT_TYPE, BRIDGE_NAME
+from .const import ATTR_EVENT_TYPE, BRIDGE_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,8 +22,11 @@ _LOGGER = logging.getLogger(__name__)
 class EventBridge:
     """Runs one HAP-python bridge and keeps it in sync with the entity list."""
 
-    def __init__(self, hass: HomeAssistant, port: int, persist_file: Path) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry_id: str, port: int, persist_file: Path
+    ) -> None:
         self._hass = hass
+        self._entry_id = entry_id
         self._port = port
         self._persist_file = persist_file
 
@@ -45,10 +50,25 @@ class EventBridge:
         self._sync_entities(entity_ids)
 
         await self.driver.async_start()
-        _LOGGER.info(
-            "HomeKit Event Bridge listening on port %s (pairing state: %s)",
+
+        pincode = self.driver.state.pincode.decode()
+        _LOGGER.warning(
+            "HomeKit Event Bridge listening on port %s — setup code: %s "
+            "(pairing state stored at %s)",
             self._port,
+            pincode,
             self._persist_file,
+        )
+        persistent_notification.async_create(
+            self._hass,
+            (
+                f"**Setup code:** `{pincode}`\n\n"
+                f"Port: {self._port}\n\n"
+                "In the Home app: Add Accessory → *I Don't Have a Code or "
+                "Cannot Scan* → *Enter Code* → paste the code above."
+            ),
+            title="HomeKit Event Bridge pairing code",
+            notification_id=f"{DOMAIN}_{self._entry_id}_setup_code",
         )
 
     async def async_stop(self) -> None:
@@ -58,6 +78,10 @@ class EventBridge:
 
         if self.driver is not None:
             await self.driver.async_stop()
+
+        persistent_notification.async_dismiss(
+            self._hass, f"{DOMAIN}_{self._entry_id}_setup_code"
+        )
 
     def _sync_entities(self, entity_ids: list[str]) -> None:
         """Add/remove accessories so they match the desired entity list.

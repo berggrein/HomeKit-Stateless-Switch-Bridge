@@ -24,7 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entities: list[str] = entry.options.get(CONF_ENTITIES, [])
 
     persist_file = _persist_file_path(hass, entry.entry_id)
-    event_bridge = EventBridge(hass, port, persist_file)
+    event_bridge = EventBridge(hass, entry.entry_id, port, persist_file)
     await event_bridge.async_start(entities)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = event_bridge
