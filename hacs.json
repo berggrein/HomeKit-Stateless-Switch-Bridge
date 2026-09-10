@@ -1,4 +1,6 @@
 {
-  "name": "HomeKit Stateless Switch Bridge",
-  "render_readme": true
+  "name": "HomeKit Event Bridge",
+  "render_readme": true,
+  "homeassistant": "2024.6.0",
+  "zip_release": false
 }

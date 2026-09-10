@@ -1,3 +1,0 @@
-DOMAIN = "homekit_stateless"
-DEFAULT_PORT = 51838
-DEFAULT_PIN = "111-22-333"

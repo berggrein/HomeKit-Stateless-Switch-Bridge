@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HomeKit Event Bridge",
+        "description": "Choose the local network port this bridge's own HomeKit accessory server will listen on. It must not collide with any other HomeKit bridge (including Home Assistant's built-in one, usually on 51827).",
+        "data": {
+          "port": "Port"
+        }
+      },
+      "entities": {
+        "title": "Choose event entities",
+        "description": "Select the `event` entities to expose to Apple HomeKit as Stateless Programmable Switches.",
+        "data": {
+          "entities": "Event entities"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Choose event entities",
+        "description": "Select the `event` entities to expose to Apple HomeKit as Stateless Programmable Switches.",
+        "data": {
+          "entities": "Event entities"
+        }
+      }
+    }
+  }
+}
