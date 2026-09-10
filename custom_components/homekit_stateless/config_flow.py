@@ -1,7 +1,7 @@
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.selector import selector
+from homeassistant.helpers import selector
 
 from .const import DOMAIN
 
@@ -22,7 +22,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
-        super().__init__()
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
@@ -32,12 +31,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         current_entities = self.config_entry.options.get("entities", [])
 
         schema = vol.Schema({
-            vol.Optional("entities", default=current_entities): selector({
-                "entity": {
-                    "domain": "event",
-                    "multiple": True
-                }
-            })
+            vol.Optional("entities", default=current_entities): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="event",
+                    multiple=True,
+                )
+            )
         })
 
         return self.async_show_form(step_id="init", data_schema=schema)
