@@ -6,5 +6,13 @@
         "description": "Vil du oprette HomeKit Stateless Switch Hubben?"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Konfigurer synlige knapper",
+        "description": "Vælg hvilke event-entiteter der skal eksponeres til Apple Hjem som Stateless Switches."
+      }
+    }
   }
 }
